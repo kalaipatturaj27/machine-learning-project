@@ -39,6 +39,10 @@ from sklearn.neighbors import KNeighborsClassifier
 from sklearn.tree import DecisionTreeClassifier,ExtraTreeClassifier
 from sklearn.ensemble import RandomForestClassifier,GradientBoostingClassifier,AdaBoostClassifier,BaggingClassifier
 import pickle
+### customer recommendation
+from itertools import chain
+from surprise import Dataset, Reader, SVD
+from surprise.model_selection import train_test_split
 
 #*****************************************************************************************************************************************
 
@@ -46,7 +50,7 @@ st.set_page_config(page_title='Machine Learning Model',  layout="wide")
 st.markdown(f'<h1 style="text-align: center;">Machine learning Model</h1>', unsafe_allow_html=True)
 
 with st.sidebar:
-    lis = ['select','prediction','nlp','image']
+    lis = ['select','prediction','nlp','image','customer recommendation']
     options =st.selectbox('',lis)
     
 #***************************************************************************************************************************************************
@@ -933,7 +937,68 @@ elif options == 'prediction':
         
             
 #***********************************************************************************************************************************************
+elif options == 'customer recommendation':
+    list_options = ['Select one', 'Process Overview','Data', 'Show recommentation']
+    option = st.selectbox('', list_options)
+    
+    data =pd.read_csv("Groceries_dataset.csv")
 
+
+
+    data = data.drop_duplicates()
+    data['Date']= pd.to_datetime(data['Date'],format='mixed')
+    unique_data = data.groupby(['Member_number','Date'])['products'].unique().agg(list).reset_index()
+    df = unique_data.sort_values('Member_number',ascending=True)
+    df['Rating'] = data['Ratings']
+    readed = Reader(line_format='user item rating',rating_scale=(0, 1))
+    df['ProductsID'] = df['products'].apply(lambda x: hash(tuple(x)))
+    df.fillna(0,inplace=True)
+
+
+    data_for_sur = Dataset.load_from_df(df[['Member_number','ProductsID','Rating']],readed)
+    train_data, test_data = train_test_split(data_for_sur,test_size=0.2)
+    model = SVD()
+    model.fit(train_data)
+
+        
+
+    def show_recom(cust_id, number_of_rec):
+        
+        products_overall = df['ProductsID'].unique()   ### Collecting all preduct ID
+        procust_bought = df[df['Member_number']==cust_id]['ProductsID'].values ### Finding the customer already bought products ID
+        prod_used_for_predict = [i for i in products_overall if i not in procust_bought]
+        predict_recom = [(prod, model.predict(cust_id,prod).est) for prod in prod_used_for_predict]
+        
+        output_recom = [df[df['ProductsID']== i_d]['products'].values[0]   for i_d, a in predict_recom[:number_of_rec]]
+        out_list = list(chain.from_iterable(output_recom))
+        out_list = list(set(out_list))
+        
+        return out_list
+
+
+    if option == 'Process Overview':
+        st.write('1.create dataset')
+        st.write('2.drop duplicales and fill nun with zeros')
+        st.write('3.changing date time')
+        st.write('4.Create Surprise dataset')
+        st.write('5. Build  model')
+        st.write('6. Generate recommendations')
+
+
+    if option =='Data':
+        
+        st.write('### Original Data')
+        st.write(data)
+        
+
+    if option == 'Show recommentation':
+        selected_customer = st.selectbox('Select a CustomerId for recommendations:', data['Member_number'].unique())
+        
+        if st.button('Generate Recommendations'):
+            st.subheader(f'Top Recommendations for CustomerId {selected_customer}:')
+            result = show_recom(selected_customer, 2)
+            for i in result:
+                st.write(i)
         
                 
     
